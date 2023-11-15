@@ -107,7 +107,7 @@ func Run() error {
 					skinFileName := fmt.Sprintf("%d_%s.jpg", i+lenStat+1, skin)
 					skinSavePath := path.Join(heroSavePath, skinFileName)
 					if Exists(skinSavePath) {
-						Logger.Warn("EXIST", "", skinSavePath)
+						Logger.Warn("EXIST", "path", skinSavePath)
 						continue
 					}
 					skinImageUrl := GetImageUrl(hero.ename, i+lenStat+1, SkinSize["b"])
