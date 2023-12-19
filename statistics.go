@@ -1,4 +1,4 @@
-package wzry
+package main
 
 import (
 	"bufio"

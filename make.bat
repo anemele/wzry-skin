@@ -6,10 +6,10 @@ set dist=dist
 set target=wzry-skin
 set build=go.exe build -ldflags="-s -w"
 
-if [%~1] == [clean] goto lbl-clean
-if [%~1] == [windows] goto lbl-windows
-if [%~1] == [linux] goto lbl-linux
-if [%~1] == [darwin] goto lbl-darwin
+if "%~1" == "clean" goto lbl-clean
+if "%~1" == "windows" goto lbl-windows
+if "%~1" == "linux" goto lbl-linux
+if "%~1" == "darwin" goto lbl-darwin
 goto lbl-build
 
 :lbl-clean

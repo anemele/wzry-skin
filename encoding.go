@@ -1,4 +1,4 @@
-package wzry
+package main
 
 /* 与编码相关的函数
 HTTP 请求的结果是字节流，错误的编码会导致乱码，无法解析数据。

@@ -1,4 +1,4 @@
-package wzry
+package main
 
 // 由于 herolist 内容不全面，格式不统一，只保留其中的
 // cname ename title 三个字段封装成 Hero ，详细内容另外发送请求获取
