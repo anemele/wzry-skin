@@ -50,11 +50,15 @@ type Hero struct {
 	SkinName string `json:"skin_name"`
 }
 
-func (h Hero) String() string {
+func (hero Hero) String() string {
 	return fmt.Sprintf(
 		"%s_%s, (%d %s), %s",
-		h.CName, h.Title, h.EName, h.IdName, h.SkinName,
+		hero.CName, hero.Title, hero.EName, hero.IdName, hero.SkinName,
 	)
+}
+
+func (hero Hero) DirName() string {
+	return fmt.Sprintf("%s_%s", hero.CName, hero.Title)
 }
 
 type Skin struct {
@@ -62,76 +66,86 @@ type Skin struct {
 	Name string
 }
 
-func (h Hero) GetSkins() []Skin {
-	skins := make([]Skin, 0)
-	for i, skin := range strings.Split(h.SkinName, "|") {
-		skins = append(skins, Skin{Idx: i + 1, Name: skin})
+func (skin Skin) FileName() string {
+	return fmt.Sprintf("%d_%s.jpg", skin.Idx, skin.Name)
+}
+
+func (hero Hero) GetSkins() []Skin {
+	var skins []Skin
+	for i, name := range strings.Split(hero.SkinName, "|") {
+		skins = append(skins, Skin{Idx: i + 1, Name: name})
 	}
 	return skins
 }
 
 var client http.Client
 
-func downloadSkin(hero Hero, skin Skin, heroDir string, wg *sync.WaitGroup) {
+func downloadSkin(hero Hero, skin Skin, heroDir string, wg *sync.WaitGroup) error {
 	defer wg.Done()
-	skinUrl := getSkinUrl(hero.EName, skin.Idx)
-	skinPath := path.Join(heroDir, fmt.Sprintf("%d_%s.jpg", skin.Idx, skin.Name))
-	if !exists(skinPath) {
-		resp, err := client.Get(skinUrl)
-		if err != nil {
-			fmt.Println(err, skinUrl)
-			return
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			fmt.Println("Error:", resp.Status, skinUrl)
-			return
-		}
-		fp, err := os.OpenFile(skinPath, os.O_CREATE|os.O_WRONLY, 0644)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		defer fp.Close()
-		_, err = io.Copy(fp, resp.Body)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		fmt.Println("Downloaded", skinPath)
+
+	skinPath := path.Join(heroDir, skin.FileName())
+	if exists(skinPath) {
+		return fmt.Errorf("exists: %s", skinPath)
 	}
+
+	skinUrl := getSkinUrl(hero.EName, skin.Idx)
+
+	resp, err := client.Get(skinUrl)
+	if err != nil {
+		return fmt.Errorf("%s: %s", err, skinUrl)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("error: %s %s", resp.Status, skinUrl)
+	}
+	defer resp.Body.Close()
+
+	fp, err := os.OpenFile(skinPath, os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer fp.Close()
+
+	_, err = io.Copy(fp, resp.Body)
+	if err != nil {
+		return err
+	}
+	fmt.Println("Downloaded", skinPath)
+
+	return nil
 }
 
 func downloadHero(hero Hero, wg *sync.WaitGroup) {
 	defer wg.Done()
-	heroDir := path.Join(LocalDir, fmt.Sprintf("%s_%s", hero.CName, hero.Title))
+
+	heroDir := path.Join(LocalDir, hero.DirName())
 	ensurePath(heroDir)
 
 	skins := hero.GetSkins()
 	wg.Add(len(skins))
 	for _, skin := range skins {
-		go downloadSkin(hero, skin, heroDir, wg)
+		go func() {
+			if err := downloadSkin(hero, skin, heroDir, wg); err != nil {
+				fmt.Println(err)
+			}
+		}()
 	}
 }
 
-func main() {
+func run() error {
 	resp, err := client.Get(ApiUrl)
 	if err != nil {
-		fmt.Println(err)
-		return
+		return err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("error: %s", resp.Status)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		fmt.Println("Error: ", resp.Status)
-		return
-	}
 
 	var heroes []Hero
 	decoder := json.NewDecoder(resp.Body)
 	err = decoder.Decode(&heroes)
 	if err != nil {
-		fmt.Println(err)
-		return
+		return err
 	}
 
 	var wg sync.WaitGroup
@@ -142,4 +156,11 @@ func main() {
 	}
 
 	wg.Wait()
+	return nil
+}
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Println(err)
+	}
 }
