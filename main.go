@@ -11,7 +11,7 @@ import (
 	"sync"
 )
 
-const ApiUrl = "http://pvp.qq.com/web201605/js/herolist.json"
+const ApiUrl = "https://pvp.qq.com/web201605/js/herolist.json"
 const LocalDir = "wzry-skin-dirs"
 
 func getSkinUrl(ename int, idx int) string {
