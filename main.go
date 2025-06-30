@@ -3,9 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
-	"os"
 	"path"
 	"strings"
 	"sync"
@@ -19,27 +17,6 @@ func getSkinUrl(ename int, idx int) string {
 		"https://game.gtimg.cn/images/yxzj/img201606/heroimg/%d/%d-bigskin-%d.jpg",
 		ename, ename, idx,
 	)
-}
-
-func exists(path string) bool {
-	_, err := os.Stat(path)
-	if err == nil {
-		return true
-	}
-	if os.IsNotExist(err) {
-		return false
-	}
-	return false
-}
-
-func ensurePath(path string) {
-	if !exists(path) {
-		os.Mkdir(path, 0755)
-	}
-}
-
-func init() {
-	ensurePath(LocalDir)
 }
 
 type Hero struct {
@@ -84,9 +61,6 @@ func downloadSkin(hero Hero, skin Skin, heroDir string, wg *sync.WaitGroup) erro
 	defer wg.Done()
 
 	skinPath := path.Join(heroDir, skin.FileName())
-	if exists(skinPath) {
-		return fmt.Errorf("exists: %s", skinPath)
-	}
 
 	skinUrl := getSkinUrl(hero.EName, skin.Idx)
 
@@ -99,16 +73,6 @@ func downloadSkin(hero Hero, skin Skin, heroDir string, wg *sync.WaitGroup) erro
 	}
 	defer resp.Body.Close()
 
-	fp, err := os.OpenFile(skinPath, os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	defer fp.Close()
-
-	_, err = io.Copy(fp, resp.Body)
-	if err != nil {
-		return err
-	}
 	fmt.Println("Downloaded", skinPath)
 
 	return nil
@@ -118,7 +82,6 @@ func downloadHero(hero Hero, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	heroDir := path.Join(LocalDir, hero.DirName())
-	ensurePath(heroDir)
 
 	skins := hero.GetSkins()
 	wg.Add(len(skins))
