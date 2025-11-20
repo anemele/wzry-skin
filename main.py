@@ -9,8 +9,9 @@ import orjson
 from fake_useragent import FakeUserAgent
 from mashumaro.mixins.orjson import DataClassORJSONMixin
 
-local_save_path = Path("wzry-skin-dirs")
+local_save_path = Path("wzry-skin-py")
 local_save_path.mkdir(exist_ok=True)
+local_save_path.joinpath(".gitignore").write_text("*")
 
 API_BASEURL = "https://pvp.qq.com/"
 API_HEROLIST = "https://pvp.qq.com/web201605/js/herolist.json"
