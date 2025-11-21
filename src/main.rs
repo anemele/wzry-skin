@@ -50,8 +50,9 @@ async fn handle_hero(
         .split('|')
         .enumerate()
         .map(|(idx, skin_name)| {
-            let skin_path = hero_path.join(format!("{idx+1}_{skin_name}.jpg"));
-            let url = get_skin_url(hero.ename, idx + 1);
+            let idx = idx + 1;
+            let skin_path = hero_path.join(format!("{idx}_{skin_name}.jpg"));
+            let url = get_skin_url(hero.ename, idx);
             download_skin(client, url, skin_path.to_path_buf())
         })
         .collect();
