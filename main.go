@@ -3,14 +3,29 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
 	"path"
 	"strings"
 	"sync"
 )
 
-const ApiUrl = "https://pvp.qq.com/web201605/js/herolist.json"
-const LocalDir = "wzry-skin-dirs"
+const (
+	ApiUrl   = "https://pvp.qq.com/web201605/js/herolist.json"
+	LocalDir = "wzry-skin-dirs"
+)
+
+// mkdir if not exists?
+// right?
+func ensureExists(path string) {
+	_, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			os.Mkdir(path, 0o755)
+		}
+	}
+}
 
 func getSkinUrl(ename int, idx int) string {
 	return fmt.Sprintf(
@@ -73,6 +88,15 @@ func downloadSkin(hero Hero, skin Skin, heroDir string, wg *sync.WaitGroup) erro
 	}
 	defer resp.Body.Close()
 
+	buf, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read %s\n%s", skinUrl, err)
+	}
+	err = os.WriteFile(skinPath, buf, 0o644)
+	if err != nil {
+		return fmt.Errorf("failed to write %s\n%s", skinPath, err)
+	}
+
 	fmt.Println("Downloaded", skinPath)
 
 	return nil
@@ -82,6 +106,7 @@ func downloadHero(hero Hero, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	heroDir := path.Join(LocalDir, hero.DirName())
+	ensureExists(heroDir)
 
 	skins := hero.GetSkins()
 	wg.Add(len(skins))
@@ -110,6 +135,8 @@ func run() error {
 	if err != nil {
 		return err
 	}
+
+	ensureExists(LocalDir)
 
 	var wg sync.WaitGroup
 
