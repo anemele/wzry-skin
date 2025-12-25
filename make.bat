@@ -13,7 +13,7 @@ set output=wzry-skin
 
 %gobuild% %dist%\%output%.exe
 
-if "%~1" neq "all" exit /b
+if "%~1" neq "all" goto :end
 
 set GOARCH=amd64
 set GOOS=linux
@@ -23,4 +23,5 @@ set GOARCH=arm64
 set GOOS=darwin
 %gobuild% %dist%\%output%-macos
 
+:end
 popd
