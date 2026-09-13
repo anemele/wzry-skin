@@ -13,7 +13,7 @@ import (
 
 const (
 	ApiUrl   = "https://pvp.qq.com/web201605/js/herolist.json"
-	LocalDir = "wzry-skin-dirs"
+	LocalDir = "skin-dirs"
 )
 
 // mkdir if not exists?
