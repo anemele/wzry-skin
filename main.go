@@ -3,12 +3,12 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"path"
 	"strings"
-	"sync"
+	"time"
+
+	"github.com/gocolly/colly/v2"
 )
 
 const (
@@ -70,87 +70,64 @@ func (hero Hero) GetSkins() []Skin {
 	return skins
 }
 
-var client http.Client
-
-func downloadSkin(hero Hero, skin Skin, heroDir string, wg *sync.WaitGroup) error {
-	defer wg.Done()
-
-	skinPath := path.Join(heroDir, skin.FileName())
-
-	skinUrl := getSkinUrl(hero.EName, skin.Idx)
-
-	resp, err := client.Get(skinUrl)
-	if err != nil {
-		return fmt.Errorf("%s: %s", err, skinUrl)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("error: %s %s", resp.Status, skinUrl)
-	}
-	defer resp.Body.Close()
-
-	buf, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read %s\n%s", skinUrl, err)
-	}
-	err = os.WriteFile(skinPath, buf, 0o644)
-	if err != nil {
-		return fmt.Errorf("failed to write %s\n%s", skinPath, err)
-	}
-
-	fmt.Println("Downloaded", skinPath)
-
-	return nil
-}
-
-func downloadHero(hero Hero, wg *sync.WaitGroup) {
-	defer wg.Done()
-
-	heroDir := path.Join(LocalDir, hero.DirName())
-	ensureExists(heroDir)
-
-	skins := hero.GetSkins()
-	wg.Add(len(skins))
-	for _, skin := range skins {
-		go func() {
-			if err := downloadSkin(hero, skin, heroDir, wg); err != nil {
-				fmt.Println(err)
-			}
-		}()
-	}
-}
-
-func run() error {
-	resp, err := client.Get(ApiUrl)
-	if err != nil {
-		return err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("error: %s", resp.Status)
-	}
-	defer resp.Body.Close()
-
-	var heroes []Hero
-	decoder := json.NewDecoder(resp.Body)
-	err = decoder.Decode(&heroes)
-	if err != nil {
-		return err
-	}
-
+func main() {
 	ensureExists(LocalDir)
 
-	var wg sync.WaitGroup
+	c1 := colly.NewCollector(
+		colly.Async(true),
+	)
+	c1.Limit(&colly.LimitRule{
+		Parallelism: 16,
+	})
+	c2 := c1.Clone()
+	c2.SetRequestTimeout(120 * time.Second)
 
-	wg.Add(len(heroes))
-	for _, hero := range heroes {
-		go downloadHero(hero, &wg)
-	}
+	defer func() {
+		c1.Wait()
+		c2.Wait()
+		fmt.Println("all done")
+	}()
 
-	wg.Wait()
-	return nil
-}
+	c1.OnResponse(func(r *colly.Response) {
+		var heroes []Hero
+		err := json.Unmarshal(r.Body, &heroes)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
 
-func main() {
-	if err := run(); err != nil {
+		for _, hero := range heroes {
+			heroDir := path.Join(LocalDir, hero.DirName())
+			ensureExists(heroDir)
+
+			skins := hero.GetSkins()
+			for _, skin := range skins {
+				skinPath := path.Join(heroDir, skin.FileName())
+				skinUrl := getSkinUrl(hero.EName, skin.Idx)
+				ctx := colly.NewContext()
+				ctx.Put("path", skinPath)
+				c2.Request("GET", skinUrl, nil, ctx, nil)
+			}
+		}
+	})
+
+	c2.OnResponse(func(r *colly.Response) {
+		skinPath := r.Ctx.Get("path")
+		err := os.WriteFile(skinPath, r.Body, 0o644)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		fmt.Println("done", skinPath)
+	})
+
+	c2.OnError(func(r *colly.Response, err error) {
+		fmt.Println(err, r.Request.URL)
+	})
+
+	err := c1.Visit(ApiUrl)
+	if err != nil {
 		fmt.Println(err)
+		return
 	}
 }
