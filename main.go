@@ -7,13 +7,13 @@ import (
 	"net/http"
 	"os"
 	"path"
-	"strings"
 	"sync"
 )
 
 const (
-	ApiUrl   = "https://pvp.qq.com/web201605/js/herolist.json"
-	LocalDir = "skin-dirs"
+	HeroListURL = "https://pvp.qq.com/web201605/js/herolist.json"
+	LocalDir    = "skin-dirs"
+	MaxTask     = 1 << 8
 )
 
 // mkdir if not exists?
@@ -27,102 +27,65 @@ func ensureExists(path string) {
 	}
 }
 
-func getSkinUrl(ename int, idx int) string {
+func getSkinURL(ename int, idx int) string {
 	return fmt.Sprintf(
 		"https://game.gtimg.cn/images/yxzj/img201606/heroimg/%d/%d-bigskin-%d.jpg",
 		ename, ename, idx,
 	)
 }
 
-type Hero struct {
-	CName    string `json:"cname"`
-	EName    int    `json:"ename"`
-	Title    string `json:"title"`
-	IdName   string `json:"id_name"`
-	SkinName string `json:"skin_name"`
-}
-
-func (hero Hero) String() string {
-	return fmt.Sprintf(
-		"%s_%s, (%d %s), %s",
-		hero.CName, hero.Title, hero.EName, hero.IdName, hero.SkinName,
-	)
-}
-
-func (hero Hero) DirName() string {
-	return fmt.Sprintf("%s_%s", hero.CName, hero.Title)
-}
-
-type Skin struct {
-	Idx  int
-	Name string
-}
-
-func (skin Skin) FileName() string {
-	return fmt.Sprintf("%d_%s.jpg", skin.Idx, skin.Name)
-}
-
-func (hero Hero) GetSkins() []Skin {
-	var skins []Skin
-	for i, name := range strings.Split(hero.SkinName, "|") {
-		skins = append(skins, Skin{Idx: i + 1, Name: name})
-	}
-	return skins
-}
-
 var client http.Client
 
-func downloadSkin(hero Hero, skin Skin, heroDir string, wg *sync.WaitGroup) error {
-	defer wg.Done()
+type Task struct {
+	Path string
+	URL  string
+}
 
-	skinPath := path.Join(heroDir, skin.FileName())
+var taskChan = make(chan Task, 1)
 
-	skinUrl := getSkinUrl(hero.EName, skin.Idx)
+func downloadSkin(task Task) (err error) {
+	skinPath := task.Path
+	skinURL := task.URL
 
-	resp, err := client.Get(skinUrl)
+	resp, err := client.Get(skinURL)
 	if err != nil {
-		return fmt.Errorf("%s: %s", err, skinUrl)
+		return
 	}
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("error: %s %s", resp.Status, skinUrl)
+		return fmt.Errorf("error: %s %s", resp.Status, skinURL)
 	}
 	defer resp.Body.Close()
 
 	buf, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("failed to read %s\n%s", skinUrl, err)
+		return
 	}
 	err = os.WriteFile(skinPath, buf, 0o644)
 	if err != nil {
-		return fmt.Errorf("failed to write %s\n%s", skinPath, err)
+		return
 	}
 
-	fmt.Println("Downloaded", skinPath)
-
+	fmt.Fprintln(os.Stderr, "Downloaded", skinPath)
 	return nil
 }
 
-func downloadHero(hero Hero, wg *sync.WaitGroup) {
-	defer wg.Done()
-
+func downloadHero(hero Hero) {
 	heroDir := path.Join(LocalDir, hero.DirName())
 	ensureExists(heroDir)
 
 	skins := hero.GetSkins()
-	wg.Add(len(skins))
 	for _, skin := range skins {
-		go func() {
-			if err := downloadSkin(hero, skin, heroDir, wg); err != nil {
-				fmt.Println(err)
-			}
-		}()
+		taskChan <- Task{
+			Path: path.Join(heroDir, skin.FileName()),
+			URL:  getSkinURL(hero.EName, skin.Idx),
+		}
 	}
 }
 
-func run() error {
-	resp, err := client.Get(ApiUrl)
+func run() (err error) {
+	resp, err := client.Get(HeroListURL)
 	if err != nil {
-		return err
+		return
 	}
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("error: %s", resp.Status)
@@ -133,19 +96,36 @@ func run() error {
 	decoder := json.NewDecoder(resp.Body)
 	err = decoder.Decode(&heroes)
 	if err != nil {
-		return err
+		return
 	}
 
 	ensureExists(LocalDir)
 
-	var wg sync.WaitGroup
-
-	wg.Add(len(heroes))
-	for _, hero := range heroes {
-		go downloadHero(hero, &wg)
+	var wg0 sync.WaitGroup
+	for range MaxTask {
+		wg0.Go(func() {
+			for task := range taskChan {
+				err := downloadSkin(task)
+				if err != nil {
+					fmt.Fprintln(os.Stderr, err)
+				}
+			}
+		})
 	}
 
-	wg.Wait()
+	var wg1 sync.WaitGroup
+	for _, hero := range heroes {
+		wg1.Go(func() {
+			downloadHero(hero)
+		})
+	}
+
+	wg1.Wait()
+	close(taskChan)
+	wg0.Wait()
+
+	fmt.Fprintln(os.Stderr, "All done.")
+
 	return nil
 }
 
